@@ -38,4 +38,4 @@ def png_to_gif2(folder, name):
 
 
 if __name__ == "__main__":
-    png_to_gif("color-changing", "stretched_torus_changing_sigma2.gif")
+    png_to_gif("pngs", "examples/cosmic_slice.gif")

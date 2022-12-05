@@ -1,22 +1,29 @@
 import numpy as np
 from astropy.io import fits
+import matplotlib.pyplot as plt
+from cloud import *
 
 
-data = np.loadtxt("all-galaxy.txt")
-print(data.shape)
-np.save("galaxies.npy", data)
+data = fits.open('gas.fits')
+data = data[0].data[0]
+data = data / np.sum(data)
 
-"""
+distribution = np.reshape(data, (data.shape[0] * data.shape[1]))
+print(distribution.shape)
 
-data = fits.open('data3.fits')
-data = data[0].data
+cloud = []
 
-print(data.shape)
+t1 = time()
+points = np.random.choice(np.arange(5760000), size=(100000), p=distribution)
+t2 = time()
 
-ras = data["objra"]
-decs = data["objdec"]
-distances = data["nsa_zdist"]
+print("total time:", t2 - t1)
+for point in points:
+    x = point % 2400
+    y = int(point / 2400)
+    cloud.append([x, y, 0])
 
-data = np.vstack([ras, decs, distances]).transpose()
-#np.save("data.npy", data)
-"""
+np.save("simulated-data.npy", np.asarray(cloud))
+
+pc = PointCloud(np.asarray(cloud))
+pc.visualize()

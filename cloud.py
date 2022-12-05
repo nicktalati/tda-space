@@ -129,7 +129,7 @@ class PointCloud(np.ndarray):
         vis.destroy_window()
         return
 
-    def subcloud(self, center, radius):
+    def subcloud(self, center, radius, n_points):
         """
         Returns a subcloud of self containing the points that are
         inside the sphere with centered at center with radius radius.
@@ -144,14 +144,17 @@ class PointCloud(np.ndarray):
 
         points = self[distances <= radius]
 
-        if len(points) < 4:
+        if len(points) < n_points:
             return None
+
+        np.random.shuffle(points)
+        points = points[:n_points, :]
 
         cloud = PointCloud(points)
         self.subclouds[(tuple(center), radius)] = cloud
         return cloud
     
-    def make_subclouds(self, radius, n_samples=1000):
+    def make_subclouds(self, radius, n_points, n_samples=1000):
         """
         Samples n_samples points in self. For each sampled point, the
         subcloud of radius radius is added to self.subclouds. 
@@ -160,10 +163,10 @@ class PointCloud(np.ndarray):
         mx = len(self)
         for i in range(n_samples):
             i %= mx
-            self.subcloud(self[i], radius)
+            self.subcloud(self[i], radius, n_points=n_points)
 
-    def color_cloud(self, radius, n_samples, homology_dimension, sigma=0.005,
-                    n_bins=10, weight_function=lambda x: x**2):
+    def color_cloud(self, radius, n_samples, n_points, homology_dimension,
+                    sigma=0.005, n_bins=10, weight_function=lambda x: x**2):
         """
         This function creates another point cloud from self. First, n_samples
         subclouds are made, each of radius radius. Persistence images are 
@@ -176,7 +179,7 @@ class PointCloud(np.ndarray):
         points from self and whose colors correspond to the colors calculated.
         """
         if self.subclouds == {}:
-            self.make_subclouds(radius, n_samples=n_samples)
+            self.make_subclouds(radius, n_samples=n_samples, n_points=n_points)
         
         kvs = self.subclouds.items()
         centers = [kv[0][0] for kv in kvs]
@@ -238,13 +241,15 @@ def make_sphere(r, noise=0.0, n_points=1000):
 
 
 if __name__ == "__main__":
-    SUBCLOUD_RADIUS = 0.3 # radius of samples taken from larger space
+    SUBCLOUD_RADIUS = 0.4 # radius of samples taken from larger space
     N_SUBCLOUDS = 10000 # number of samples taken
+    N_POINTS = 100 # number of points to be sampled from each subcloud
     HOM_DIM = 1 # homological dimension for which to calculate persistence
     SIGMA = 0.005 # size of gaussian filter that smooths persistence images
     N_BINS = 25 # persistence images are of size N_BINS x N_BINS
     WEIGHT_FUNC = lambda x: x ** 2.5 # scales persistence image based on 
                                      # x = death - birth
+    
 
     shape = make_torus(1, 0.9, noise=0.02, resolution=100)
     shape = PointCloud(shape)
@@ -254,6 +259,7 @@ if __name__ == "__main__":
 
     cc = shape.color_cloud(SUBCLOUD_RADIUS,
                             N_SUBCLOUDS,
+                            N_POINTS,
                             HOM_DIM,
                             sigma=SIGMA,
                             n_bins=N_BINS,
