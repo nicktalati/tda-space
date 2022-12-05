@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import open3d as otd
 import numpy as np
+import os
 
-from time import time
+from time import time, sleep
 
 np.random.seed(42)
 np.set_printoptions(threshold=np.inf)
@@ -25,6 +26,21 @@ def normalize(arr):
     ret = np.maximum(np.zeros_like(ret), ret)
     return ret
 
+def rotate(arr, axis, angle):
+    if axis == 0:
+        rot = np.asarray([[1, 0, 0],
+                         [0, np.cos(angle), -np.sin(angle)],
+                         [0, np.sin(angle), np.cos(angle)]])
+    elif axis == 1:
+        rot = np.asarray([[np.cos(angle), 0, np.sin(angle)],
+                          [0, 1, 0],
+                          [-np.sin(angle), 0, np.cos(angle)]])
+    elif axis == 2:
+        rot = np.asarray([[np.cos(angle), -np.sin(angle), 0],
+                          [np.sin(angle), np.cos(angle), 0],
+                          [0, 0, 1]])
+    ret = np.matmul(rot, arr.transpose()).transpose()
+    return ret
 
 class PointCloud(np.ndarray):
     """
@@ -67,17 +83,51 @@ class PointCloud(np.ndarray):
         persistence_image = pi_transformer.fit_transform(pd)
         return persistence_image
 
-    def visualize(self):
+    def visualize(self, save_folder=None):
         """
         Opens the cloud in a new window for visualization.
         """
+        self = rotate(self, 0, 1.6)
+        self = rotate(self, 2, 0.3)
         colors = self.colors
         if colors is None:
-            colors = np.zeros_like(self)
+            colors = np.ones_like(self)
         pc = otd.geometry.PointCloud()
         pc.points = otd.utility.Vector3dVector(self)
         pc.colors = otd.utility.Vector3dVector(colors)
-        otd.visualization.draw_geometries([pc])
+
+        vis = otd.visualization.Visualizer()
+        vis.create_window()
+        vis.add_geometry(pc)
+
+        vis.get_render_option().background_color = \
+            np.asarray([28/255, 34/255, 27/255])
+
+        if save_folder is None:
+            vis.run()
+            vis.destroy_window()
+            return
+
+        for i in range(300):
+            pc.points = otd.utility.Vector3dVector(self)
+            self = rotate(self, 0, -0.3)
+            self = rotate(self, 1, 2*np.pi/300)
+            self = rotate(self, 0, 0.3)
+            vis.update_geometry(pc)
+            vis.poll_events()
+            vis.update_renderer()
+            if save_folder is not None:
+                image = vis.capture_screen_float_buffer(True)
+                try:
+                    plt.imsave(save_folder + "/" + "{:02d}".format(i) + ".png",
+                    np.asarray(image), dpi=1)
+                except OSError:
+                    os.makedirs(save_folder)
+                    plt.imsave(save_folder + "/" + "{:02d}".format(i) + ".png",
+                    np.asarray(image), dpi=1)
+
+        vis.destroy_window()
+        return
 
     def subcloud(self, center, radius):
         """
@@ -157,27 +207,26 @@ def make_torus(r1, r2, noise=0.0, resolution=100):
     surface of the torus is essentially constant. 
     """
     points = []
-    for theta in np.linspace(0, 2*np.pi, resolution, endpoint=False):
+    for theta in np.linspace(0, 2*np.pi, 2*resolution, endpoint=False):
         radius = r1 - r2 * np.cos(theta)
         height = r2 * np.sin(theta)
         n_points = int(resolution * radius / r1)
         for phi in np.linspace(0, 2*np.pi, n_points, endpoint=False):
             x = radius * np.cos(phi)
             y = radius * np.sin(phi)
-            points.append([x, y, height])
+            points.append([x, y, 2*height])
     points = np.asarray(points)
     noise_mat = np.random.random(points.shape) + np.full_like(points, -0.5)
     noise_mat *= noise
     points += noise_mat
-    return PointCloud(points)
+    return points
 
 
 def make_sphere(r, noise=0.0, n_points=1000):
     """
     Makes a sphere PointCloud. 
     """
-    vecs = np.random.random((n_points, 3))
-    vecs -= np.full_like(vecs, 0.5)
+    vecs = np.random.normal(size=(n_points, 3))
     lens = np.sqrt(np.sum(vecs**2, axis=1))
     lens = np.tile(lens, (3, 1)).transpose()
     vecs = vecs / lens
@@ -185,7 +234,7 @@ def make_sphere(r, noise=0.0, n_points=1000):
     noise_mat = np.random.random(vecs.shape) + np.full_like(vecs, -0.5)
     noise_mat *= noise
     vecs += noise_mat
-    return PointCloud(vecs * float(r))
+    return vecs * float(r)
 
 
 if __name__ == "__main__":
@@ -193,19 +242,25 @@ if __name__ == "__main__":
     N_SUBCLOUDS = 10000 # number of samples taken
     HOM_DIM = 1 # homological dimension for which to calculate persistence
     SIGMA = 0.005 # size of gaussian filter that smooths persistence images
-    N_BINS = 100 # persistence images are of size N_BINS x N_BINS
+    N_BINS = 25 # persistence images are of size N_BINS x N_BINS
     WEIGHT_FUNC = lambda x: x ** 2.5 # scales persistence image based on 
                                      # x = death - birth
 
-    torus = make_torus(1, 0.9, noise=0.03, resolution=100)
-    torus.visualize()
+    shape = make_torus(1, 0.9, noise=0.02, resolution=100)
+    shape = PointCloud(shape)
+    shape.visualize()
 
-    cc = torus.color_cloud(SUBCLOUD_RADIUS,
-                           N_SUBCLOUDS,
-                           HOM_DIM,
-                           sigma=SIGMA,
-                           n_bins=N_BINS,
-                           weight_function=WEIGHT_FUNC)
+    t1 = time()
+
+    cc = shape.color_cloud(SUBCLOUD_RADIUS,
+                            N_SUBCLOUDS,
+                            HOM_DIM,
+                            sigma=SIGMA,
+                            n_bins=N_BINS,
+                            weight_function=WEIGHT_FUNC)
 
     cc.visualize()
+
+    t2 = time()
+    print("Total time:", t2 - t1)
 
